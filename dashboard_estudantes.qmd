@@ -1,0 +1,248 @@
+---
+title: "Dashboard Estudantes"
+author: Taine Gorges
+format: 
+  dashboard:
+    sidebar: 
+      style: "floating"
+      page-layout: full
+server: shiny
+theme: minty   
+---
+
+```{python}
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from shiny import reactive
+from shiny.express import render, ui
+from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+
+# Carregamento da base
+df = pd.read_csv("base_dados_estudantes.csv", encoding="latin1")
+df["qualidade_sono"] = df["horas_de_sono"].apply(lambda x: "Boa" if x >= 7 else "Ruim")
+```
+
+```{python}
+@reactive.calc
+def dados_filtrados():
+    return df[
+        (df["horas_de_estudo_por_dia"] >= input.min_estudo()) &
+        (df["horas_redes_sociais"] <= input.max_redes()) &
+        (df["qualidade_sono"].isin(input.sono_filtro()))
+    ]
+```
+
+## {.sidebar}
+```{python}
+ui.input_slider("min_estudo", "Minimo de horas de estudo:", 0, 8, 0)
+ui.input_slider("max_redes", "Maximo de horas em redes sociais:", 0, 6, 6)
+ui.input_checkbox_group("sono_filtro", "Qualidade do sono:", ["Boa", "Ruim"], selected=["Boa", "Ruim"])
+```
+
+# Dados
+
+```{python}
+ui.markdown("""
+### Introducao
+
+Este dashboard interativo analisa dados ficticios de estudantes, buscando compreender como seus habitos impactam o desempenho acadmico e o bem-estar mental. A base inclui variaveis como numero de horas de estudo, horas de sono, uso de redes sociais, saude mental e qualidade de vida, com o objetivo de gerar insights relevantes para melhorar a performance e o bem-estar dos alunos.
+
+Tem como objetivo ser uma ferramenta visual e interativa para que professores, gestores e os proprios estudantes explorem padroes comportamentais, identifiquem fatores de risco e moldem estrategias de apoio educacional. A visualizacao dos dados permite observar tendencias como a relacao entre sono e desempenho, o impacto das redes sociais na saude mental, e a existencia de agrupamentos de alunos com perfis semelhantes.
+
+Alem dos graficos interativos, os filtros permitem observar diferentes grupos de alunos de forma segmentada. Essa analise facilita interpretacoes e decisoes, promovendo um ambiente mais saudavel e eficiente para o aprendizado.
+
+---
+
+### Estrutura dos Dados
+
+- **Numero de linhas (estudantes):** 2355  
+- **Numero de colunas (variaveis):** 10
+
+---
+
+### Descricao das Colunas
+
+- **nota_do_exame**: Nota final obtida no exame (0 a 100).  
+- **horas_de_estudo_por_dia**: Horas medias de estudo por dia.  
+- **horas_de_sono**: Horas medias de sono por noite.  
+- **horas_redes_sociais**: Tempo medio diario gasto em redes sociais.  
+- **qualidade_da_dieta**: Avaliacao da dieta do aluno (Boa/Ruim).  
+- **qualidade_da_internet**: Qualidade da conexao de internet (Boa/Ruim).  
+- **genero**: Genero com o qual o aluno se identifica.  
+- **trabalho_meio_periodo**: Se o aluno trabalha meio periodo (Sim/Nao).  
+- **percentual_de_presença**: Presenca nas aulas em percentual.  
+- **saude_mental**: Avaliacao da saude mental (Alta, Media, Baixa).  
+
+### Tabela de Dados Filtrados
+
+A tabela abaixo exibe os dados filtrados de acordo com os controles de estudo, redes sociais e sono.  
+Ela permite visualizar as informacoes usadas nos graficos.
+""")
+
+@render.data_frame
+def tabela_dados():
+    return render.DataGrid(dados_filtrados(), height="400px")
+
+```
+
+# Estudo e Nota
+
+```{python}
+ui.markdown("""
+O grafico mostra a correlacao entre as horas de estudo diarias de cada estudante e a nota obtida no teste. Cada ponto representa um aluno e a linha verde indica se existe alguma tendencia geral. O objetivo e entender se ha relacao entre dedicacao e desempenho.
+""")
+
+@render.plot
+def correlacao():
+    dados = dados_filtrados()
+    if dados.empty:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title("Sem dados")
+        return fig
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.scatterplot(data=dados, x="horas_de_estudo_por_dia", y="nota_do_exame", ax=ax)
+    sns.regplot(data=dados, x="horas_de_estudo_por_dia", y="nota_do_exame", ax=ax, color="green")
+    ax.set_title("Correlação entre Horas de Estudo e Nota")
+    ax.set_xlabel("Horas de Estudo por Dia")
+    ax.set_ylabel("Nota do Exame")
+    return fig
+```
+# Agrupamento de Alunos
+
+```{python}
+ui.markdown("""
+Este grafico agrupa os alunos com base em habitos semelhantes (horas de estudo, sono e uso de redes sociais), utilizando o algoritmo de KMeans.
+O KMeans e um metodo que forma grupos , colocando juntos os alunos com comportamentos parecidos. 
+Cada ponto no grafico representa um aluno, e as cores indicam a qual grupo ele pertence.
+""")
+
+@render.plot
+def agrupamento_alunos():
+    dados = dados_filtrados()
+    if dados.empty:
+        fig, ax = plt.subplots()
+        ax.set_title("Sem dados")
+        return fig
+
+    X = dados[["horas_de_estudo_por_dia", "horas_de_sono", "horas_redes_sociais"]].dropna()
+    X_padronizado = StandardScaler().fit_transform(X)
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    clusters = kmeans.fit_predict(X_padronizado)
+    X["Grupo"] = clusters
+
+    fig, ax = plt.subplots(1, 2, figsize=(18, 6))
+
+    # Gráfico de dispersão
+    sns.scatterplot(data=X, x="horas_de_estudo_por_dia", y="horas_de_sono", hue="Grupo", palette="Set2", ax=ax[0])
+    ax[0].set_title("Agrupamento de Alunos por Hábitos Semelhantes")
+    ax[0].set_xlabel("Horas de Estudo por Dia")
+    ax[0].set_ylabel("Horas de Sono")
+
+    # Gráfico de barras com médias por grupo
+    cores_verdes = ["#2e7d32", "#66bb6a", "#a5d6a7"] 
+
+    medias = X.groupby("Grupo")[["horas_de_estudo_por_dia", "horas_de_sono", "horas_redes_sociais"]].mean().reset_index()
+    medias.columns = [col.replace("_", " ") for col in medias.columns]
+
+    cores_verdes = ["#2e7d32", "#66bb6a", "#a5d6a7"]
+    medias.plot(kind="bar", x="Grupo", ax=ax[1], color=cores_verdes)
+
+    ax[1].set_title("Media de Habitos por Grupo")
+    ax[1].set_ylabel("Media")
+    ax[1].tick_params(axis='x', rotation=0)
+    ax[1].legend(title="Variaveis")
+
+    return fig
+    X = dados[["horas_de_estudo_por_dia", "horas_de_sono", "horas_redes_sociais"]].dropna()
+    X_padronizado = StandardScaler().fit_transform(X)
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    clusters = kmeans.fit_predict(X_padronizado)
+    X["Cluster"] = clusters
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.scatterplot(data=X, x="horas_de_estudo_por_dia", y="horas_de_sono", hue="Cluster", palette="Set2", ax=ax)
+    ax.set_title("Agrupamento de Alunos por Hábitos Semelhantes")
+    ax.set_xlabel("Horas de Estudo por Dia")
+    ax.set_ylabel("Horas de Sono")
+    return fig
+```
+
+# Qualidade do Sono
+
+```{python}
+ui.markdown("""
+O grafico mostra a distribuicao dos estudantes com base na classificacao da qualidade de sono. Ele permite visualizar quantos relataram sono "Bom" e quantos relataram sono "Ruim", conforme o filtro selecionado.
+""")
+
+@render.plot
+def sono_plot():
+    dados = dados_filtrados()
+    if dados.empty:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title("Sem dados")
+        return fig
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.countplot(data=dados, x="qualidade_sono", palette="Greens", ax=ax)
+    ax.set_title("Distribuição da Qualidade do Sono")
+    ax.set_xlabel("Qualidade do Sono")
+    ax.set_ylabel("Quantidade de Alunos")
+    return fig
+```
+
+# Saude Mental
+
+```{python}
+ui.markdown("""
+O grafico apresenta uma tabela que resume o desempenho gerada por um modelo de regressao logistica,  
+que tenta prever a condicao de saude mental de estudantes com base em habitos diarios.  Pode-se verificar se comportamentos como sono e estudo tem a ver com saude mental.
+""")
+
+@render.plot
+def classifica_saude():
+    dados = dados_filtrados()
+    if dados.empty:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title("Sem dados")
+        return fig
+    le = LabelEncoder()
+    dados["saude_cod"] = le.fit_transform(dados["saude_mental"])
+    X = dados[["horas_de_estudo_por_dia", "horas_de_sono", "horas_redes_sociais"]]
+    y = dados["saude_cod"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+    modelo = LogisticRegression(max_iter=1000).fit(X_train, y_train)
+    pred = modelo.predict(X_test)
+    cm = confusion_matrix(y_test, pred)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.heatmap(cm, annot=True, cmap="Greens", fmt="d", ax=ax)
+    ax.set_title("Classificação da Saúde Mental com Base em Hábitos")
+    return fig
+```
+
+# Correlacoes
+
+```{python}
+ui.markdown("""
+O heatmap mostra as correlacoes entre variaveis como horas de estudo, sono, uso de redes sociais e nota do exame.  Valores proximos de 1 indicam uma correlacao positiva forte, enquanto valores proximos de -1 indicam correlacao negativa.
+""")
+
+@render.plot
+def mapa_correlacoes():
+    dados = dados_filtrados()
+    if dados.empty:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.set_title("Sem dados")
+        return fig
+    corr = dados[["nota_do_exame", "horas_de_estudo_por_dia", "horas_de_sono", "horas_redes_sociais"]].corr()
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.heatmap(corr, annot=True, cmap="Greens", vmin=-1, vmax=1, ax=ax)
+    ax.set_title("Mapa de Correlações entre Variáveis")
+    return fig
+```
+
+
+

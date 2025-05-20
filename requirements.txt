@@ -1,0 +1,10 @@
+pandas
+seaborn
+matplotlib.pyplot 
+shiny 
+sklearn.preprocessing 
+sklearn.linear_model 
+sklearn.model_selection 
+sklearn.metrics 
+sklearn.cluster 
+sklearn.preprocessing 
