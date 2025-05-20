@@ -2,6 +2,5 @@ pandas
 seaborn
 matplotlib
 shiny
-sklearn
 jupyter
 scikit-learn
