@@ -4,3 +4,4 @@ matplotlib
 shiny
 sklearn
 jupyter
+scikit-learn
